@@ -1,48 +1,281 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>XML to DataMatrix Generator</title>
-    <link rel="stylesheet" href="style.css">
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .upload-section { margin-bottom: 20px; padding: 20px; border: 2px dashed #ccc; border-radius: 8px; }
+        button { background: #007cba; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        .loading { display: none; color: #666; margin: 10px 0; }
+        .results-section { margin-top: 30px; }
+        .data-string-item { 
+            background: #f5f5f5; 
+            padding: 15px; 
+            margin: 10px 0; 
+            border-radius: 8px; 
+            font-family: monospace; 
+            font-size: 12px; 
+            border-left: 4px solid #007cba;
+        }
+        .datamatrix-result { 
+            margin-top: 10px; 
+            padding: 10px; 
+            background: white; 
+            border-radius: 4px; 
+            display: none;
+        }
+        .datamatrix-image-container {
+            display: flex;
+            align-items: flex-start;
+            gap: 15px;
+            margin-top: 10px;
+        }
+        .datamatrix-image {
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 5px;
+            background: white;
+        }
+    </style>
 </head>
 <body>
     <div class="container">
-        <header>
-            <h1>XML to DataMatrix Generator</h1>
-            <p>Upload an XML file to generate aggregated data strings and DataMatrix images</p>
-        </header>
+        <h1>XML to DataMatrix Generator</h1>
         
-        <section class="upload-section">
-            <div class="file-input-wrapper">
-                <input type="file" id="xml-file" accept=".xml">
-            </div>
+        <div class="upload-section">
+            <input type="file" id="xml-file" accept=".xml">
             <button id="process-btn">Process XML File</button>
-            <div id="status-message" class="status-message"></div>
-            <div class="debug-info" id="debug-info"></div>
-        </section>
-        
-        <div class="loading" id="loading">
-            <div class="spinner"></div>
-            <p>Processing XML file and generating DataMatrix codes...</p>
+            <div class="loading" id="loading">Processing XML file...</div>
         </div>
         
-        <section class="results-section" id="results-section">
-            <h2>Generated Results</h2>
-            
-            <div class="data-strings">
-                <h3>Aggregated Data Strings</h3>
-                <div id="data-strings-container"></div>
+        <div class="results-section">
+            <div id="data-strings-container" style="display: none;">
+                <h3>Generated Data Strings</h3>
+                <div id="data-strings-list"></div>
             </div>
-            
-            <div class="datamatrix-images">
-                <h3>DataMatrix Images</h3>
-                <div id="datamatrix-container" class="datamatrix-container"></div>
-            </div>
-        </section>
+        </div>
     </div>
 
-    <!-- Load the main module -->
-    <script type="module" src="main.js"></script>
+    <script type="module">
+        import { toCanvas } from 'https://cdn.jsdelivr.net/npm/bwip-js/dist/bwip-js.mjs';
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            const xmlFileInput = document.getElementById('xml-file');
+            const processBtn = document.getElementById('process-btn');
+            const loadingElement = document.getElementById('loading');
+            const dataStringsContainer = document.getElementById('data-strings-container');
+            const dataStringsList = document.getElementById('data-strings-list');
+            
+            processBtn.addEventListener('click', async function() {
+                const file = xmlFileInput.files[0];
+                
+                if (!file) {
+                    alert('Please select an XML file');
+                    return;
+                }
+                
+                try {
+                    loadingElement.style.display = 'block';
+                    processBtn.disabled = true;
+                    dataStringsList.innerHTML = '';
+                    
+                    console.log('Processing XML file...');
+                    const result = await processXmlFile(file);
+                    
+                    console.log('Displaying results...');
+                    await displayResults(result);
+                    
+                } catch (error) {
+                    console.error('Error:', error);
+                    alert('Error: ' + error.message);
+                } finally {
+                    loadingElement.style.display = 'none';
+                    processBtn.disabled = false;
+                }
+            });
+            
+            async function processXmlFile(file) {
+                const xmlText = await readFileAsText(file);
+                const parser = new DOMParser();
+                const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+                
+                const parseError = xmlDoc.getElementsByTagName('parsererror')[0];
+                if (parseError) {
+                    throw new Error('Invalid XML format: ' + parseError.textContent);
+                }
+                
+                return generateAggregatedData(xmlDoc);
+            }
+            
+            function readFileAsText(file) {
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = e => resolve(e.target.result);
+                    reader.onerror = reject;
+                    reader.readAsText(file);
+                });
+            }
+            
+            function generateAggregatedData(xmlDoc) {
+                const aggregatedDataList = [];
+                const ordinalNumbers = [];
+                const betData = {};
+                
+                const root = xmlDoc.documentElement;
+                const betElements = xmlDoc.getElementsByTagName('bet');
+                const localDrawDateTime = root.getAttribute('LocalDrawDateTime');
+                const drawDate = parseDate(localDrawDateTime);
+                const dayOfWeek = drawDate.getDay();
+                
+                console.log(`Found ${betElements.length} bet elements`);
+                
+                for (let betElement of betElements) {
+                    const betType = betElement.getAttribute('BetType');
+                    const ordinalNumber = betElement.getAttribute('OrdinalNumber');
+                    
+                    ordinalNumbers.push(ordinalNumber);
+                    betData[ordinalNumber] = new XMLSerializer().serializeToString(betElement);
+                    
+                    if (betType === 'Regular') {
+                        const blockCount = betElement.getAttribute('BlockCount');
+                        const firstPart = "1;FDJ;PDJ;0,0000;141;";
+                        
+                        let secondPart = "";
+                        for (let i = 1; i <= parseInt(blockCount); i++) {
+                            const block = betElement.querySelector(`Block${i}`);
+                            if (block) {
+                                let regularGuess = block.getAttribute('RegularGuess');
+                                let additionalGuess = block.getAttribute('AdditionalGuess');
+                                
+                                regularGuess = regularGuess.split(',')
+                                    .map(guess => guess.padStart(2, '0'))
+                                    .join('');
+                                additionalGuess = additionalGuess.padStart(2, '0');
+                                
+                                secondPart += `${regularGuess}C${additionalGuess}O0,`;
+                            }
+                        }
+                        
+                        secondPart = secondPart.replace(/,$/, '');
+                        const thirdPart = `;0,0;${Math.pow(2, dayOfWeek)},1;1`;
+                        const aggregatedData = firstPart + secondPart + thirdPart;
+                        aggregatedDataList.push(aggregatedData);
+                        
+                    } else if (betType === 'Systematic') {
+                        const guess = betElement.querySelector('guess');
+                        if (guess) {
+                            let systematicGuess = guess.getAttribute('SystematicGuess');
+                            let additionalGuess = guess.getAttribute('AdditionalGuess');
+                            
+                            systematicGuess = systematicGuess.split(';')
+                                .map(guess => guess.padStart(2, '0'))
+                                .join('');
+                            additionalGuess = additionalGuess.padStart(2, '0');
+                            
+                            const firstPart = "1;FDJ;PDJ;0,0000;141;";
+                            const secondPart = `${systematicGuess}C${additionalGuess}O0`;
+                            const thirdPart = `;0,0;${Math.pow(2, dayOfWeek)},1;1`;
+                            const aggregatedData = firstPart + secondPart + thirdPart;
+                            aggregatedDataList.push(aggregatedData);
+                        }
+                    }
+                }
+                
+                return { aggregatedDataList, ordinalNumbers, betData };
+            }
+            
+            function parseDate(dateString) {
+                const [datePart, timePart] = dateString.split(' ');
+                const [day, month, year] = datePart.split('-');
+                return new Date(`${year}-${month}-${day}T${timePart}`);
+            }
+            
+            async function displayResults(result) {
+                const { aggregatedDataList, ordinalNumbers, betData } = result;
+                
+                // Display data strings
+                dataStringsList.innerHTML = '';
+                aggregatedDataList.forEach((dataString, index) => {
+                    const div = document.createElement('div');
+                    div.className = 'data-string-item';
+                    div.innerHTML = `
+                        <div><strong>Ordinal ${ordinalNumbers[index]}:</strong></div>
+                        <div style="margin: 8px 0; word-break: break-all;">${dataString}</div>
+                        <button onclick="generateSingleDataMatrix('${ordinalNumbers[index]}', '${dataString.replace(/'/g, "\\'")}', this)" 
+                                style="font-size: 12px; padding: 8px 16px;">
+                            Generate DataMatrix
+                        </button>
+                        <div class="datamatrix-result" id="result-${ordinalNumbers[index]}"></div>
+                    `;
+                    dataStringsList.appendChild(div);
+                });
+                dataStringsContainer.style.display = 'block';
+                
+                console.log('Ready to generate DataMatrix codes individually');
+            }
+            
+            // Make function globally available
+            window.generateSingleDataMatrix = async function(ordinal, dataString, buttonElement) {
+                try {
+                    console.log(`Generating DataMatrix for ordinal ${ordinal}`);
+                    
+                    // Disable the button and show loading
+                    buttonElement.disabled = true;
+                    buttonElement.textContent = 'Generating...';
+                    
+                    const canvas = document.createElement('canvas');
+                    canvas.width = 200;
+                    canvas.height = 200;
+                    
+                    // Use the exact same approach that worked in the simple test
+                    toCanvas(canvas, {
+                        bcid: 'datamatrix',
+                        text: dataString,
+                        scale: 3,
+                        height: 25,
+                    });
+                    
+                    // Get the result container for this ordinal
+                    const resultContainer = document.getElementById(`result-${ordinal}`);
+                    
+                    // Create the image container
+                    const imageContainer = document.createElement('div');
+                    imageContainer.className = 'datamatrix-image-container';
+                    imageContainer.innerHTML = `
+                        <div class="datamatrix-image">
+                            <img src="${canvas.toDataURL('image/png')}" alt="DataMatrix for ordinal ${ordinal}" width="150" height="150">
+                        </div>
+                        <div style="font-size: 11px; color: #666;">
+                            <div><strong>Ordinal: ${ordinal}</strong></div>
+                            <div style="margin-top: 5px;">DataMatrix generated successfully!</div>
+                        </div>
+                    `;
+                    
+                    // Clear previous result and add new one
+                    resultContainer.innerHTML = '';
+                    resultContainer.appendChild(imageContainer);
+                    resultContainer.style.display = 'block';
+                    
+                    console.log(`✓ Successfully generated DataMatrix for ordinal ${ordinal}`);
+                    
+                } catch (error) {
+                    console.error(`✗ Error generating DataMatrix for ordinal ${ordinal}:`, error);
+                    
+                    // Re-enable the button
+                    buttonElement.disabled = false;
+                    buttonElement.textContent = 'Generate DataMatrix';
+                    
+                    // Show error
+                    const resultContainer = document.getElementById(`result-${ordinal}`);
+                    resultContainer.innerHTML = `<div style="color: red; font-size: 12px;">Error: ${error.message}</div>`;
+                    resultContainer.style.display = 'block';
+                }
+            };
+        });
+    </script>
 </body>
 </html>
