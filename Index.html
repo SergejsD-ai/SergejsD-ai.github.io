@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>XML to DataMatrix Generator</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>XML to DataMatrix Generator</h1>
+            <p>Upload an XML file to generate aggregated data strings and DataMatrix images</p>
+        </header>
+        
+        <section class="upload-section">
+            <div class="file-input-wrapper">
+                <input type="file" id="xml-file" accept=".xml">
+            </div>
+            <button id="process-btn">Process XML File</button>
+            <div id="status-message" class="status-message"></div>
+            <div class="debug-info" id="debug-info"></div>
+        </section>
+        
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>Processing XML file and generating DataMatrix codes...</p>
+        </div>
+        
+        <section class="results-section" id="results-section">
+            <h2>Generated Results</h2>
+            
+            <div class="data-strings">
+                <h3>Aggregated Data Strings</h3>
+                <div id="data-strings-container"></div>
+            </div>
+            
+            <div class="datamatrix-images">
+                <h3>DataMatrix Images</h3>
+                <div id="datamatrix-container" class="datamatrix-container"></div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Load the main module -->
+    <script type="module" src="main.js"></script>
+</body>
+</html>
